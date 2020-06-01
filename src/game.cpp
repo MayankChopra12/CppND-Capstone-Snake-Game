@@ -4,9 +4,13 @@
 
 Game::Game(std::size_t grid_width, std::size_t grid_height)
     : snake(grid_width, grid_height),
+      wall(grid_width, grid_height),
+      bonus(grid_width, grid_height),
+      grid_width(grid_width),
+      grid_height(grid_height),
       engine(dev()),
-      random_w(0, static_cast<int>(grid_width)),
-      random_h(0, static_cast<int>(grid_height)) {
+      random_w(0, static_cast<int>(grid_width-1)),
+      random_h(0, static_cast<int>(grid_height-1)) {
   PlaceFood();
 }
 
@@ -25,7 +29,7 @@ void Game::Run(Controller const &controller, Renderer &renderer,
     // Input, Update, Render - the main game loop.
     controller.HandleInput(running, snake);
     Update();
-    renderer.Render(snake, food);
+    renderer.Render(snake, food, wall, bonus);
 
     frame_end = SDL_GetTicks();
 
@@ -57,7 +61,7 @@ void Game::PlaceFood() {
     y = random_h(engine);
     // Check that the location is not occupied by a snake item before placing
     // food.
-    if (!snake.SnakeCell(x, y)) {
+    if (!snake.SnakeCell(x, y) && (!wall.WallCell(x,y))) {
       food.x = x;
       food.y = y;
       return;
@@ -73,15 +77,55 @@ void Game::Update() {
   int new_x = static_cast<int>(snake.head_x);
   int new_y = static_cast<int>(snake.head_y);
 
+  if(isSnakeRunIntoWall(new_x, new_y)){
+    snake.alive = false;
+    return;
+  }
   // Check if there's food over here
   if (food.x == new_x && food.y == new_y) {
     score++;
+    wall.AddWall();
     PlaceFood();
+    if(score%6==0 && score !=0)
+    {
+      bonus.Spawn();
+      while(wall.WallCell(bonus.GetBonusPosition()))
+      {
+        bonus.Kill();
+        bonus.Spawn();
+      }
+      
+      bonus.ResetBonusTimeStart();
+    }
+    
     // Grow snake and increase speed.
     snake.GrowBody();
-    snake.speed += 0.02;
+    snake.speed += 0.01;
+  }
+
+  // Check if there's bonus over here
+  if (bonus.isBonusSpawned()){
+    if (bonus.GetBonusPosition().x == new_x && bonus.GetBonusPosition().y == new_y)
+    {
+      snake.speed -= 3*0.01;
+      wall.RemoveWall();
+      bonus.Kill();
+    }
+    if (std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now() - bonus.GetBonusTimeStart()).count() > 5000)
+    {
+      bonus.Kill();
+    }
   }
 }
 
 int Game::GetScore() const { return score; }
 int Game::GetSize() const { return snake.size; }
+
+bool Game::isSnakeRunIntoWall(int x, int y){
+  for (SDL_Point &point : wall.GetWallBodies()){
+    if (x == point.x && y == point.y){
+      return true;
+    }
+  }
+  return false;
+}
